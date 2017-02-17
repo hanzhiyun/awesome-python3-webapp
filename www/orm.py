@@ -25,7 +25,7 @@ __auth__ = 'peic'
  
 '''
 
-
+import sys
 import asyncio
 import logging
 
@@ -65,7 +65,16 @@ def create_pool(loop, **kw):
     )
 
 
+@asyncio.coroutine
+def destroy_pool():
+    global __pool
+    if __pool is not None:
+        __pool.close()
+        yield from __pool.wait_closed()
+
+
 # 封装SQL SELECT语句为select函数
+@asyncio.coroutine
 def select(sql, args, size=None):
     log(sql, args)
     global __pool
@@ -83,10 +92,10 @@ def select(sql, args, size=None):
         # 根据指定返回的size，返回查询的结果
         if size:
             # 返回size条查询结果
-            rs = fetchmany(size)
+            rs = yield from cur.fetchmany(size)
         else:
             # 返回所有查询结果
-            rs = fetchall()
+            rs = yield from cur.fetchall()
 
         yield from cur.close()
         logging.info('rows return: %s' % (len(rs)))
@@ -97,14 +106,15 @@ def select(sql, args, size=None):
 # 语句操作参数一样，所以定义一个通用的执行函数
 # 返回操作影响的行号
 @asyncio.coroutine
-def execute(sql, args):
+def execute(sql, args, autocommit=True):
     log(sql, args)
     global __pool
     with (yield from __pool) as conn:
         try:
             # execute类型的SQL操作返回的结果只有行号，所以不需要用DictCursor
             cur = yield from conn.cursor()
-            cur.execute(sql.replace('?', '%s'), args)
+            yield from cur.execute(sql.replace('?', '%s'), args)
+            yield from conn.commit()
             affectedLine = cur.rowcount
             yield from cur.close()
         except BaseException as e:
@@ -353,6 +363,7 @@ class Model(dict, metaclass=ModelMetaclass):
     @asyncio.coroutine
     def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
+        print('save:%s' % args)
         args.append(self.getValueOrDefault(self.__primary_key__))
         rows = yield from execute(self.__insert__, args)
         if rows != 1:
