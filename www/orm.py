@@ -1,66 +1,58 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# @Date    : 2017-02-16 16:10:19
+# @Author  : Han Zhiyun (hanzhiyun1995@qq.com)
 
-
-__auth__ = 'peic'
-
-
-'''
-选择MySQL作为网站的后台数据库
+"""
+-------------------------------------------------------------------------------
+Function:   封装的ORM工具类
+Version:    1.0
+Author:     SLY
+Contact:    slysly759@gmail.com 
  
-执行SQL语句进行操作，并将常用的SELECT、INSERT等语句进行函数封装
- 
-在异步框架的基础上，采用aiomysql作为数据库的异步IO驱动
- 
-将数据库中表的操作，映射成一个类的操作，也就是数据库表的一行映射成一个对象(ORM)
- 
-整个ORM也是异步操作
- 
-预备知识：Python协程和异步IO(yield from的使用)、SQL数据库操作、元类、面向对象知识、Python语法
- 
-# -*- -----  思路  ----- -*-
-    如何定义一个user类，这个类和数据库中的表User构成映射关系，二者应该关联起来，user可以操作表User
-     
-    通过Field类将user类的属性映射到User表的列中，其中每一列的字段又有自己的一些属性，包括数据类型，列名，主键和默认值
- 
-'''
-
+code is far away from bugs with the god animal protecting
+               ┏┓      ┏┓
+            ┏┛┻━━━┛┻┓
+            ┃      ☃      ┃
+            ┃  ┳┛  ┗┳  ┃
+            ┃      ┻      ┃
+            ┗━┓      ┏━┛
+                ┃      ┗━━━┓
+                ┃  神兽保佑    ┣┓
+                ┃　永无BUG！   ┏┛
+                ┗┓┓┏━┳┓┏┛
+                  ┃┫┫  ┃┫┫
+                  ┗┻┛  ┗┻┛
+-------------------------------------------------------------------------------
+"""
 import sys
 import asyncio
 import logging
-
-# pip3 install aiomysql
+logging.basicConfig(level=logging.INFO)
+# 一次使用异步 处处使用异步
 import aiomysql
-
-# 打印SQL查询语句
 
 
 def log(sql, args=()):
-    logging.info('SQL: %s' % (sql))
+    logging.info('SQL:%s' % sql)
 
 
-# 创建一个全局的连接池，每个HTTP请求都从池中获得数据库连接
 @asyncio.coroutine
 def create_pool(loop, **kw):
-    logging.info('create database connection pool...')
-
-    # 全局变量__pool用于存储整个连接池
+    logging.info(' start creating database connection pool')
     global __pool
+    # 理解这里的yield from 是很重要的
     __pool = yield from aiomysql.create_pool(
-        # **kw参数可以包含所有连接需要用到的关键字参数
-        # 默认本机IP
         host=kw.get('host', 'localhost'),
+        port=kw.get('port', 3306),
         user=kw['user'],
         password=kw['password'],
         db=kw['db'],
-        port=kw.get('port', 3306),
         charset=kw.get('charset', 'utf8'),
         autocommit=kw.get('autocommit', True),
-        # 默认最大连接数为10
         maxsize=kw.get('maxsize', 10),
-        minsize=kw.get('minisize', 1),
-
-        # 接收一个event_loop实例
+        # 目前不清楚这个minsize是什么鬼
+        minsize=kw.get('minsize', 1),
         loop=loop
     )
 
@@ -72,113 +64,111 @@ def destroy_pool():
         __pool.close()
         yield from __pool.wait_closed()
 
+# 我很好奇为啥不用commit 事务不用提交么
 
-# 封装SQL SELECT语句为select函数
+
 @asyncio.coroutine
 def select(sql, args, size=None):
     log(sql, args)
     global __pool
-
+    # 666 建立游标
     # -*- yield from 将会调用一个子协程，并直接返回调用的结果
     # yield from从连接池中返回一个连接
-    with (yield from __pool) as conn:
-        # DictCursor is a cursor which returns results as a dictionary
+    with (yield from __pool)as conn:
         cur = yield from conn.cursor(aiomysql.DictCursor)
-
-        # 执行SQL语句
-        # SQL语句的占位符为?，MySQL的占位符为%s
-        yield from cur.execute(sql.replace('?', '%s'), args or ())
-
-        # 根据指定返回的size，返回查询的结果
+        yield from cur.execute(sql.replace('?', '%s'), args)
         if size:
-            # 返回size条查询结果
             rs = yield from cur.fetchmany(size)
         else:
-            # 返回所有查询结果
             rs = yield from cur.fetchall()
-
         yield from cur.close()
-        logging.info('rows return: %s' % (len(rs)))
-        return rs
+        logging.info('rows have returned %s' % len(rs))
+    return rs
 
 
 # 封装INSERT, UPDATE, DELETE
 # 语句操作参数一样，所以定义一个通用的执行函数
 # 返回操作影响的行号
+# 我想说的是 知道影响行号有个叼用
+
 @asyncio.coroutine
 def execute(sql, args, autocommit=True):
-    log(sql, args)
+    log(sql)
     global __pool
     with (yield from __pool) as conn:
         try:
-            # execute类型的SQL操作返回的结果只有行号，所以不需要用DictCursor
+            # 因为execute类型sql操作返回结果只有行号，不需要dict
             cur = yield from conn.cursor()
+            # 顺便说一下 后面的args 别掉了 掉了是无论如何都插入不了数据的
             yield from cur.execute(sql.replace('?', '%s'), args)
             yield from conn.commit()
-            affectedLine = cur.rowcount
+            affected_line = cur.rowcount
             yield from cur.close()
+            print('execute : ', affected_line)
         except BaseException as e:
             raise
-        return affectedLine
+        return affected_line
+
+# 这个函数主要是把查询字段计数 替换成sql识别的?
+# 比如说：insert into  `User` (`password`, `email`, `name`, `id`) values
+# (?,?,?,?)  看到了么 后面这四个问号
 
 
-# 根据输入的参数生成占位符列表
 def create_args_string(num):
-    L = []
+    lol = []
     for n in range(num):
-        L.append('?')
-
-    # 以','为分隔符，将列表合成字符串
-    return (','.join(L))
-
+        lol.append('?')
+    return (','.join(lol))
 
 # 定义Field类，负责保存(数据库)表的字段名和字段类型
+
+
 class Field(object):
     # 表的字段包含名字、类型、是否为表的主键和默认值
 
-    def __init__(self, name, column_type, primary_key, default):
+    def __init__(self, name, column_type, primary__key, default):
         self.name = name
         self.column_type = column_type
-        self.primary_key = primary_key
+        self.primary_key = primary__key
         self.default = default
 
-    # 当打印(数据库)表时，输出(数据库)表的信息:类名，字段类型和名字
     def __str__(self):
-        return ('<%s, %s: %s>' % (self.__class__.__name__, self.column_type, self.name))
+        # 返回 表名字 字段名 和字段类型
+        return "&lt;%s , %s , %s&gt;" % (self.__class__.__name__, self.name, self.column_type)
+# 定义数据库中五个存储类型
 
-
-# -*- 定义不同类型的衍生Field -*-
-# -*- 表的不同列的字段的类型不一样
 
 class StringField(Field):
 
-    def __init__(self, name=None, primary_key=False, default=None, column_type='varchar(100)'):
-        super().__init__(name, column_type, primary_key, default)
+    def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
+        super().__init__(name, ddl, primary_key, default)
+# 布尔类型不可以作为主键
 
 
 class BooleanField(Field):
 
     def __init__(self, name=None, default=None):
-        super().__init__(name, 'boolean', False, default)
+        super().__init__(name, 'Boolean', False, default)
+# 不知道这个column type是否可以自己定义 先自己定义看一下
 
 
 class IntegerField(Field):
 
-    def __init__(self, name=None, primary_key=False,  default=0):
-        super().__init__(name, 'bigint', primary_key, default)
+    def __init__(self, name=None, primary_key=False, default=0):
+        super().__init__(name, 'int', primary_key, default)
 
 
 class FloatField(Field):
 
-    def __init__(self, name=None, primary_key=False,  default=0.0):
-        super().__init__(name, 'real', primary_key, default)
+    def __init__(self, name=None, primary_key=False, default=0.0):
+        super().__init__(name, 'float', primary_key, default)
 
 
 class TextField(Field):
 
     def __init__(self, name=None, default=None):
-        super().__init__(name, 'Text', False, default)
-
+        super().__init__(name, 'text', False, default)
+# class Model(dict,metaclass=ModelMetaclass):
 
 # -*-定义Model的元类
 
@@ -192,77 +182,67 @@ class TextField(Field):
 # 将数据库表名保存到__table__中
 
 # 完成这些工作就可以在Model中定义各种数据库的操作方法
+# metaclass是类的模板，所以必须从`type`类型派生：
+
 
 class ModelMetaclass(type):
-
     # __new__控制__init__的执行，所以在其执行之前
     # cls:代表要__init__的类，此参数在实例化时由Python解释器自动提供(例如下文的User和Model)
     # bases：代表继承父类的集合
     # attrs：类的方法集合
-    def __new__(cls, name, bases, attrs):
 
-        # 排除Model
+    def __new__(cls, name, bases, attrs):
+        # 排除model 是因为要排除对model类的修改
         if name == 'Model':
             return type.__new__(cls, name, bases, attrs)
-
-        # 获取table名词
-        tableName = attrs.get('__table__', None) or name
-        logging.info('found model: %s (table: %s)' % (name, tableName))
-
-        # 获取Field和主键名
+        # 获取table名称 为啥获取table名称 至于在哪里我也是不明白握草
+        table_name = attrs.get('__table__', None) or name
+        logging.info('found table: %s (table: %s) ' % (name, table_name))
+        # 获取Field所有主键名和Field
         mappings = dict()
         fields = []
         primaryKey = None
+        # 这个k是表示字段名
         for k, v in attrs.items():
-            # Field 属性
             if isinstance(v, Field):
-                # 此处打印的k是类的一个属性，v是这个属性在数据库中对应的Field列表属性
-                logging.info('  found mapping: %s --> %s' % (k, v))
+                logging.info('Found mapping %s===&gt;%s' % (k, v))
+            # 注意mapping的用法
                 mappings[k] = v
-
-                # 找到了主键
                 if v.primary_key:
-
-                    # 如果此时类实例的已存在主键，说明主键重复了
+                    logging.info('fond primary key hahaha %s' % k)
+                    # 这里很有意思 当第一次主键存在primaryKey被赋值 后来如果再出现主键的话就会引发错误
                     if primaryKey:
-                        raise StandardError(
-                            'Duplicate primary key for field: %s' % k)
-                    # 否则将此列设为列表的主键
+                        raise RuntimeError('Duplicated key for field')
                     primaryKey = k
                 else:
                     fields.append(k)
-        # end for
 
         if not primaryKey:
-            raise StandardError('Primary key is nor founnd')
-
-        # 从类属性中删除Field属性
+            raise RuntimeError('Primary key not found!')
+        # w下面位字段从类属性中删除Field 属性
         for k in mappings.keys():
             attrs.pop(k)
 
-        # 保存除主键外的属性名为``（运算出字符串）列表形式
+        # 保存除主键外的属性为''列表形式
+        # 这一句的lambda表达式没懂
         escaped_fields = list(map(lambda f: '`%s`' % f, fields))
-
         # 保存属性和列的映射关系
         attrs['__mappings__'] = mappings
         # 保存表名
-        attrs['__table__'] = tableName
-        # 保存主键属性名
+        attrs['__table__'] = table_name
+        # 保存主键名称
         attrs['__primary_key__'] = primaryKey
-        # 保存除主键外的属性名
+        # 保存主键外的属性名
         attrs['__fields__'] = fields
-
-        # 构造默认的SELECT、INSERT、UPDATE、DELETE语句
-        # ``反引号功能同repr()
-        attrs['__select__'] = 'select `%s`, %s from `%s`' % (
-            primaryKey, ', '.join(escaped_fields), tableName)
-        attrs['__insert__'] = 'insert into  `%s` (%s, `%s`) values(%s)' % (tableName, ', '.join(
-            escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
-        attrs['__update__'] = 'update `%s` set `%s` where `%s` = ?' % (tableName, ', '.join(
+        # 构造默认的增删改查 语句
+        attrs['__select__'] = 'select `%s`, %s from `%s` ' % (
+            primaryKey, ', '.join(escaped_fields), table_name)
+        attrs['__insert__'] = 'insert into  `%s` (%s, `%s`) values (%s) ' % (
+            table_name, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields)+1))
+        attrs['__update__'] = 'update `%s` set %s where `%s` = ?' % (table_name, ', '.join(
             map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
-        attrs['__delete__'] = 'delete from  `%s` where `%s`=?' % (
-            tableName, primaryKey)
-
+        attrs['__delete__'] = 'delete `%s` where `%s`=?' % (
+            table_name, primaryKey)
         return type.__new__(cls, name, bases, attrs)
 
 
@@ -284,38 +264,37 @@ class Model(dict, metaclass=ModelMetaclass):
         try:
             return self[key]
         except KeyError:
-            raise AttributeError(r'"Model" object has no attribute：%s' % (key))
+            raise AttributeError(
+                "'Model' object have no attribution: %s" % key)
 
     def __setattr__(self, key, value):
         self[key] = value
 
     def getValue(self, key):
-        # 内建函数getattr会自动处理
+        # 这个是默认内置函数实现的
         return getattr(self, key, None)
 
     def getValueOrDefault(self, key):
         value = getattr(self, key, None)
-        if not value:
+        if value is None:
             field = self.__mappings__[key]
             if field.default is not None:
                 value = field.default() if callable(
                     field.default) else field.default
-                logging.debug('using default value for %s: %s' %
-                              (key, str(value)))
+                logging.info('using default value for %s : %s ' %
+                             (key, str(value)))
                 setattr(self, key, value)
+
         return value
 
     @classmethod
     # 类方法有类变量cls传入，从而可以用cls做一些相关的处理。并且有子类继承时，调用该类方法时，传入的类变量cls是子类，而非父类。
     @asyncio.coroutine
-    def findAll(cls, where=None, args=None, **kw):
-        '''find objects by where clause'''
+    def find_all(cls, where=None, args=None, **kw):
         sql = [cls.__select__]
-
         if where:
             sql.append('where')
             sql.append(where)
-
         if args is None:
             args = []
 
@@ -323,7 +302,7 @@ class Model(dict, metaclass=ModelMetaclass):
         if orderBy:
             sql.append('order by')
             sql.append(orderBy)
-
+        # dict 提供get方法 指定放不存在时候返回后学的东西 比如a.get('Fuck',None)
         limit = kw.get('limit', None)
         if limit is not None:
             sql.append('limit')
@@ -334,7 +313,8 @@ class Model(dict, metaclass=ModelMetaclass):
                 sql.append('?,?')
                 args.extend(limit)
             else:
-                raise ValueError('Invalid limit value: %s' % str(limit))
+                raise ValueError('Invalid limit value : %s ' % str(limit))
+
         rs = yield from select(' '.join(sql), args)
         return [cls(**r) for r in rs]
 
@@ -351,6 +331,7 @@ class Model(dict, metaclass=ModelMetaclass):
             return None
         return rs[0]['__num__']
 
+    # 这个黑魔法我还在研究呢~
     @classmethod
     @asyncio.coroutine
     def find(cls, primarykey):
@@ -360,6 +341,21 @@ class Model(dict, metaclass=ModelMetaclass):
             return None
         return cls(**rs[0])
 
+    @classmethod
+    @asyncio.coroutine
+    def findAll(cls, **kw):
+        rs = []
+        if len(kw) == 0:
+            rs = yield from select(cls.__select__, None)
+        else:
+            args = []
+            values = []
+            for k, v in kw.items():
+                args.append('%s=?' % k)
+                values.append(v)
+            rs = yield from select('%s where %s ' % (cls.__select__,  ' and '.join(args)), values)
+        return rs
+
     @asyncio.coroutine
     def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
@@ -367,43 +363,35 @@ class Model(dict, metaclass=ModelMetaclass):
         args.append(self.getValueOrDefault(self.__primary_key__))
         rows = yield from execute(self.__insert__, args)
         if rows != 1:
-            logging.warn('failed to insert record: affected rows: %s' % rows)
+            print(self.__insert__)
+            logging.warning(
+                'failed to insert record: affected rows: %s' % rows)
 
     @asyncio.coroutine
+    # 显示方言错误是什么鬼。。。
     def update(self):
         args = list(map(self.getValue, self.__fields__))
         args.append(self.getValue(self.__primary_key__))
-        rows = yield from execute(self.__updata__, args)
+        rows = yield from execute(self.__update__, args)
         if rows != 1:
-            logging.warn(
-                'failed to update by primary key: affected rows: %s' % rows)
+            logging.warning(
+                'failed to update record: affected rows: %s' % rows)
 
     @asyncio.coroutine
     def remove(self):
         args = [self.getValue(self.__primary_key__)]
         rows = yield from execute(self.__updata__, args)
         if rows != 1:
-            logging.warn(
+            logging.warning(
                 'failed to remove by primary key: affected rows: %s' % rows)
 
 
-if __name__ == '__main__':
-
+if __name__ == "__main__":
     class User(Model):
-        # 定义类的属性到列的映射：
         id = IntegerField('id', primary_key=True)
         name = StringField('username')
         email = StringField('email')
         password = StringField('password')
-
-    # # 创建一个实例：
-    # u = User(
-    #     id=12345, name='peic', email='peic@python.org', password='password')
-    # print(u)
-    # # 保存到数据库：
-    # u.save()
-    # print(u)
-
     # 创建异步事件的句柄
     loop = asyncio.get_event_loop()
 
