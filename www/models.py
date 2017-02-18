@@ -11,8 +11,8 @@ Models for user,blog,comment.
 import time
 import uuid
 
-from www.orm import Model, StringField, BooleanField, FloatField, TextField
-
+# from www.orm import Model, StringField, BooleanField, FloatField, TextField
+from orm import Model, StringField, BooleanField, FloatField, TextField
 
 def next_id():
     # uuid.uuid4() : 基于随机数;通过随机数来生成UUID. 使用的是伪随机数有一定的重复概率.
