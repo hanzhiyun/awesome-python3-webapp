@@ -1,2 +1,4 @@
 #Windows:
 .idea
+*.zip
+/www/__pycache__/
