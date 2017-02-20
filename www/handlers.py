@@ -11,32 +11,37 @@ from models import User, Comment, Blog, next_id
 
 @get('/blog')
 async def handler_url_blog(request):
-    body='<h1>Awesome: /blog</h1>'
+    body = '<h1>Awesome: /blog</h1>'
     return body
 
+
 @get('/greeting')
-async def handler_url_greeting(*,name,request):
-    body='<h1>Awesome: /greeting %s</h1>'%name
+async def handler_url_greeting(*, name, request):
+    body = '<h1>Awesome: /greeting %s</h1>' % name
     return body
+
 
 @get('/input')
 async def handler_url_input(request):
-    body='<form action="/result" method="post">E-mail: <input type="email" name="user_email" /><input type="submit" /></form>'
+    body = '<form action="/result" method="post">E-mail: <input type="email" name="user_email" /><input type="submit" /></form>'
     return body
 
+
 @post('/result')
-async def handler_url_result(*,user_email,request):
-    body='<h1>您输入的邮箱是%s</h1>'%user_email
+async def handler_url_result(*, user_email, request):
+    body = '<h1>您输入的邮箱是%s</h1>' % user_email
     return body
+
 
 @get('/index')
 async def handler_url_index(request):
-    body='<h1>Awesome: /index</h1>'
+    body = '<h1>Awesome: /index</h1>'
     return body
+
 
 @get('/create_comment')
 async def handler_url_create_comment(request):
-    body='<h1>Awesome: /create_comment</h1>'
+    body = '<h1>Awesome: /create_comment</h1>'
     return body
 '''
 @get('/')
@@ -47,6 +52,8 @@ async def index(request):
         'users': users
     }
 '''
+
+
 @get('/')
 async def index(request):
     # summary = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
@@ -60,4 +67,25 @@ async def index(request):
         '__template__': 'blogs.html',
         'blogs': blogs
     }
+
+
+@get('/api/users')
+async def api_get_users():
+    users = await User.find_All(orderBy='created_at desc')
+    for u in users: 
+        u.passwd = '******'
+    return dict(users=users)
+
+# @get('/api/users')
+# def api_get_users(*, page='1'):
+#     page_index = get_page_index(page)
+#     num = yield from User.findNumber('count(id)')
+#     p = Page(num, page_index)
+#     if num == 0:
+#         return dict(page=p, users=())
+#     users = yield from User.findAll(orderBy='created_at desc', limit=(p.offset, p.limit))
+#     for u in users:
+#         u.passwd = '******'
+#     return dict(page=p, users=users)
+
 
