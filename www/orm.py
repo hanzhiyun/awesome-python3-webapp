@@ -76,7 +76,7 @@ def select(sql, args, size=None):
     # yield from从连接池中返回一个连接
     with (yield from __pool)as conn:
         cur = yield from conn.cursor(aiomysql.DictCursor)
-        yield from cur.execute(sql.replace('?', '%s'), args)
+        yield from cur.execute(sql.replace('?', '%s'), args or ())
         if size:
             rs = yield from cur.fetchmany(size)
         else:
@@ -290,7 +290,7 @@ class Model(dict, metaclass=ModelMetaclass):
     @classmethod
     # 类方法有类变量cls传入，从而可以用cls做一些相关的处理。并且有子类继承时，调用该类方法时，传入的类变量cls是子类，而非父类。
     @asyncio.coroutine
-    def find_all(cls, where=None, args=None, **kw):
+    def find_All(cls, where=None, args=None, **kw):
         sql = [cls.__select__]
         if where:
             sql.append('where')
