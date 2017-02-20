@@ -387,11 +387,24 @@ class Model(dict, metaclass=ModelMetaclass):
 
 
 if __name__ == "__main__":
+    import time
     class User(Model):
-        id = IntegerField('id', primary_key=True)
-        name = StringField('username')
+        __table__ = 'users'
+
+        id = StringField('id', primary_key=True)
         email = StringField('email')
-        password = StringField('password')
+        passwd = StringField('passwd')
+        admin = BooleanField()
+        name = StringField('username')
+        image = StringField(ddl='varchar(500)')
+        created_at = FloatField(default=time.time)
+
+    # class User(Model):
+    #     id = IntegerField('id', primary_key=True)
+    #     name = StringField('username')
+    #     email = StringField('email')
+    #     passwd = StringField('passwd')
+
     # 创建异步事件的句柄
     loop = asyncio.get_event_loop()
 
@@ -400,8 +413,11 @@ if __name__ == "__main__":
     def test():
         yield from create_pool(loop=loop, host='localhost', port=3306, user='testuser', password='74527452', db='test')
         user = User(
-            id=11, name='hby', email='hubayi@gmail.com', password='fuckblog')
+            id=11, name='hby', email='hubayi@gmail.com', passwd='fuckblog', image='about:blank', admin=True)
+        user1 = User(
+            id=12, name='wpz', email='wangpanzi@gmail.com', passwd='fuckblog', image='about:blank', admin=True)
         yield from user.save()
+        yield from user1.save()
         r = yield from User.find('11')
         print(0, r)
         r = yield from User.findAll()

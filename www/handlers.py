@@ -6,6 +6,8 @@
 
 from coroweb import get, post
 from aiohttp import web
+from models import User, Comment, Blog, next_id
+
 
 @get('/blog')
 async def handler_url_blog(request):
@@ -36,4 +38,13 @@ async def handler_url_index(request):
 async def handler_url_create_comment(request):
     body='<h1>Awesome: /create_comment</h1>'
     return body
-    
+
+@get('/')
+async def index(request):
+    users = await User.findAll()
+    return {
+        '__template__': 'test.html',
+        'users': users
+    }
+
+
