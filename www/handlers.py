@@ -165,6 +165,14 @@ def signout(request):
     return r
 
 
+@get('/manage/blogs')
+def manage_blogs(*, page='1'):
+    return {
+        '__template__': 'manage_blogs.html',
+        'page_index': get_page_index(page)
+    }
+
+
 @get('/manage/blogs/create')
 def manage_create_blog():
     return {
@@ -182,6 +190,17 @@ async def api_get_users():
     return dict(users=users)
 
 
+@get('/api/blogs')
+def api_blogs(*, page='1'):
+    page_index = get_page_index(page)
+    num = yield from Blog.findNumber('count(id)')
+    p = Page(num, page_index)
+    if num == 0:
+        return dict(page=p, blogs=())
+    blogs = yield from Blog.find_All(orderBy='created_at desc', limit=(p.offset, p.limit))
+    return dict(page=p, blogs=blogs)
+
+
 @get('/api/blogs/{id}')
 def api_get_blog(*, id):
     blog = yield from Blog.find(id)
@@ -196,7 +215,7 @@ async def index(request):
     #     Blog(id='2', name='Something New', summary=summary, created_at=time.time()-3600),
     #     Blog(id='3', name='Learn Swift', summary=summary, created_at=time.time()-7200)
     # ]
-    blogs = await Blog.findAll()
+    blogs = await Blog.find_All()
     return {
         '__template__': 'blogs.html',
         'blogs': blogs,
@@ -211,7 +230,7 @@ async def index(request):
 #     p = Page(num, page_index)
 #     if num == 0:
 #         return dict(page=p, users=())
-#     users = yield from User.findAll(orderBy='created_at desc', limit=(p.offset, p.limit))
+#     users = yield from User.find_All(orderBy='created_at desc', limit=(p.offset, p.limit))
 #     for u in users:
 #         u.passwd = '******'
 #     return dict(page=p, users=users)
